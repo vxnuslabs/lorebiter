@@ -2,7 +2,7 @@
 
 > **⚠️ WARNING:** This software is currently untested.
 
-Lorebiter is a private, browser-based roleplaying engine for personal use. Built with Next.js App Router, Drizzle ORM, Neon PostgreSQL, and OpenRouter for LLM integration.
+Lorebiter is a private, browser-based roleplaying engine for personal use. Built with Next.js App Router, Drizzle ORM, PostgreSQL (local-first, with pgvector), and OpenRouter for LLM integration.
 
 
 ## Features
@@ -31,11 +31,11 @@ Lorebiter is a private, browser-based roleplaying engine for personal use. Built
    cp .env.example .env.local
    ```
    You will need:
-   - A [Neon](https://neon.tech) database URL (`DATABASE_URL`).
+   - A local PostgreSQL database URL (`DATABASE_URL`) with `pgvector` enabled, e.g., `postgres://user:password@localhost:5432/lorebiter`. (Alternatively, you can use a cloud database like [Neon](https://neon.tech)).
    - An [OpenRouter](https://openrouter.ai) API key (`OPENROUTER_API_KEY`).
 
 3. **Database Push**
-   Push the schema to your Neon database:
+   Push the schema to your database:
    ```bash
    npx drizzle-kit push
    ```
