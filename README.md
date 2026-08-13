@@ -5,12 +5,18 @@
 Lorebiter is a private, browser-based roleplaying engine for personal use. Built with Next.js App Router, Drizzle ORM, Neon PostgreSQL, and OpenRouter for LLM integration.
 
 
-## Features (Phase 1)
-- **World Management**: Create and manage distinct worlds.
-- **Lore Entries**: Define characters with public, personal, and observable layers.
-- **AI Polish**: Built-in grammar and style polish for lore entries.
-- **Chat Sessions**: Engage in immersive roleplay sessions with specific characters.
-- **Narrator & Anti-Hijack**: A World Narrator handles the environment, and strict prompts ensure characters do not hijack your actions.
+## Features
+- **World Management**: Create, export, and import complete self-contained worlds as JSON backups.
+- **Rich Lore Entries**: Define diverse lore entries (characters, events, facts, locations, relationships) using dynamic templates and layered visibility (public, personal, observable).
+- **Multi-NPC Orchestration**: Engage in dynamic chat sessions supporting multiple NPCs, with automatic promotion/demotion for dialogue based on direct addresses.
+- **Consistency Enforcement**: An Arbiter tracks observed facts to detect contradictions, gracefully handling lies and misremembered statements without breaking immersion.
+- **Semantic RAG & Triggers**: Uses vector embeddings to semantically query and dynamically inject the most relevant lore entries into context.
+- **Session Search**: Search past chat logs by semantic meaning to retrieve distant memories.
+- **Long-term Memory**: Automatically summarize completed chat sessions into new permanent lore entries.
+- **Inner Thoughts**: Characters generate hidden internal reasoning that guides their actions, viewable via an Insight toggle.
+- **Visual Lore Graph**: Visualize relationships between lore entries and detect orphaned nodes.
+- **AI Polish & Quick Entry**: Use NLP to convert raw text dumps into structured lore entries and polish existing drafts.
+- **Narrator & Anti-Hijack**: A World Narrator manages the environment and transitions, while strict prompts ensure agents never hijack your actions.
 
 ## Getting Started
 
