@@ -1,80 +1,83 @@
 import { NextResponse } from "next/server";
+export const dynamic = 'force-dynamic';
 import { db } from "@/db";
-import { worlds, entries, sessions, messages } from "@/db/schema";
+import { worlds, entries, relationships } from "@/db/schema";
 import crypto from "crypto";
+import { generateEmbedding } from "@/lib/embeddings";
 
 export async function POST(request: Request) {
   try {
     const data = await request.json();
-
-    if (!data.world || !data.entries || !data.sessions || !data.messages) {
-      return NextResponse.json({ error: "Invalid import format" }, { status: 400 });
+    
+    if (!data.world || !data.world.name) {
+      return NextResponse.json({ error: "Invalid LorePack format: Missing world data" }, { status: 400 });
     }
 
-    const { world, entries: importEntries, sessions: importSessions, messages: importMessages } = data;
-
-    // 1. Generate new World ID
-    const newWorldId = crypto.randomUUID();
+    const worldId = crypto.randomUUID();
     
-    // 2. ID Mapping maps old ID -> new ID
-    const idMap: Record<string, string> = {
-      [world.id]: newWorldId
-    };
-
-    // Insert World
+    // Insert world
     await db.insert(worlds).values({
-      ...world,
-      id: newWorldId,
-      name: `${world.name} (Imported)`
+      id: worldId,
+      name: data.world.name,
+      themeHint: data.world.themeHint || "",
+      narratorVoice: data.world.narratorVoice || ""
     });
 
-    // 3. Insert Entries with new IDs
-    if (importEntries.length > 0) {
-      const newEntries = importEntries.map((entry: any) => {
-        const newEntryId = crypto.randomUUID();
-        idMap[entry.id] = newEntryId;
-        return {
-          ...entry,
-          id: newEntryId,
-          worldId: newWorldId
-        };
-      });
-      await db.insert(entries).values(newEntries);
-    }
+    const nameToEntryId: Record<string, string> = {};
 
-    // 4. Insert Sessions and their Messages
-    if (importSessions.length > 0) {
-      const newSessions = importSessions.map((session: any) => {
-        const newSessionId = crypto.randomUUID();
-        idMap[session.id] = newSessionId;
-        return {
-          ...session,
-          id: newSessionId,
-          worldId: newWorldId
-        };
-      });
-      await db.insert(sessions).values(newSessions);
-    }
+    // Import entries
+    if (data.entries && Array.isArray(data.entries)) {
+      for (const entry of data.entries) {
+        if (!entry.name || !entry.type) continue;
 
-    if (importMessages.length > 0) {
-      const newMessages = importMessages.map((msg: any) => {
-        const newMsgId = crypto.randomUUID();
-        return {
-          ...msg,
-          id: newMsgId,
-          sessionId: idMap[msg.sessionId] || msg.sessionId // Remap sessionId to the new one
-        };
-      });
-      
-      // Batch insert messages in chunks if there are many
-      const chunkSize = 100;
-      for (let i = 0; i < newMessages.length; i += chunkSize) {
-        const chunk = newMessages.slice(i, i + chunkSize);
-        await db.insert(messages).values(chunk);
+        const entryId = crypto.randomUUID();
+        nameToEntryId[entry.name] = entryId;
+        
+        // Prepare text for embedding
+        const combinedText = [
+          entry.name,
+          ...(entry.tags || []),
+          entry.layers?.public || "",
+          entry.layers?.personal || "",
+          entry.layers?.observable || ""
+        ].join(" ");
+
+        const embedding = await generateEmbedding(combinedText);
+
+        await db.insert(entries).values({
+          id: entryId,
+          worldId,
+          type: entry.type,
+          name: entry.name,
+          aliases: entry.aliases || [],
+          tags: entry.tags || [],
+          layers: entry.layers || {},
+          triggers: entry.triggers || {},
+          autoInject: true,
+          embedding
+        });
       }
     }
 
-    return NextResponse.json({ success: true, worldId: newWorldId }, { status: 200 });
+    // Import canonical relationships (graph links)
+    if (data.canonicalRelationships && Array.isArray(data.canonicalRelationships)) {
+      for (const rel of data.canonicalRelationships) {
+        const sourceId = nameToEntryId[rel.sourceName];
+        const targetId = nameToEntryId[rel.targetName];
+        if (sourceId && targetId && rel.relationType) {
+          await db.insert(relationships).values({
+            id: crypto.randomUUID(),
+            worldId,
+            sourceId,
+            targetId,
+            relationType: rel.relationType,
+            context: rel.context || ""
+          });
+        }
+      }
+    }
+
+    return NextResponse.json({ success: true, worldId }, { status: 200 });
   } catch (error) {
     console.error("Import error:", error);
     return NextResponse.json({ error: "Failed to import world" }, { status: 500 });

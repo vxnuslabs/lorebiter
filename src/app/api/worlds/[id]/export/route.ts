@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { worlds, entries, sessions, messages } from "@/db/schema";
+import { worlds, entries, relationships } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export async function GET(
@@ -22,32 +22,36 @@ export async function GET(
 
     const world = worldData[0];
     const worldEntries = await db.select().from(entries).where(eq(entries.worldId, id));
-    const worldSessions = await db.select().from(sessions).where(eq(sessions.worldId, id));
-    
-    // Get all messages for all sessions in this world
-    const sessionIds = worldSessions.map(s => s.id);
-    let allMessages: any[] = [];
-    
-    if (sessionIds.length > 0) {
-      // In a real app we'd batch this or use in operator, but doing it simply
-      for (const sId of sessionIds) {
-        const sessionMessages = await db.select().from(messages).where(eq(messages.sessionId, sId));
-        allMessages = [...allMessages, ...sessionMessages];
-      }
-    }
+    const worldRelationships = await db.select().from(relationships).where(eq(relationships.worldId, id));
+
+    const entryIdToName = Object.fromEntries(worldEntries.map(e => [e.id, e.name]));
 
     const exportData = {
-      world,
-      entries: worldEntries,
-      sessions: worldSessions,
-      messages: allMessages,
+      world: {
+        name: world.name,
+        themeHint: world.themeHint,
+        narratorVoice: world.narratorVoice
+      },
+      entries: worldEntries.map(e => ({
+        type: e.type,
+        name: e.name,
+        aliases: e.aliases,
+        tags: e.tags,
+        layers: e.layers
+      })),
+      canonicalRelationships: worldRelationships.map(r => ({
+        sourceName: entryIdToName[r.sourceId],
+        targetName: entryIdToName[r.targetId],
+        relationType: r.relationType,
+        context: r.context
+      })).filter(r => r.sourceName && r.targetName)
     };
 
     return new NextResponse(JSON.stringify(exportData, null, 2), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
-        "Content-Disposition": `attachment; filename="lorebiter-world-${id}.json"`,
+        "Content-Disposition": `attachment; filename="lorepack-${world.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json"`,
       },
     });
   } catch (error) {

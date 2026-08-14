@@ -22,7 +22,7 @@ function containsHijack(text: string): boolean {
 
 export async function POST(request: Request) {
   try {
-    const { sessionId, userMessage, model } = await request.json();
+    const { sessionId, userMessage, model: requestedModel } = await request.json();
 
     const userEmbedding = await generateEmbedding(userMessage);
 
@@ -41,6 +41,7 @@ export async function POST(request: Request) {
     const [world] = await db.select().from(worlds).where(eq(worlds.id, session.worldId));
     
     const state = session.state as any;
+    const model = requestedModel || state.model || "x-ai/grok-4.5";
     const presentNpcIds = state.present_npcs || [];
     let activeSpeakerIds = state.active_speakers || [];
     let mode = state.mode || "narrative";
@@ -213,9 +214,9 @@ Use Persona traits and World Role context to determine how canonical relationshi
 Do not treat Persona and World Entity as the same identity.
 Do not rewrite canonical relationships into Persona-specific relationships.
 
-1. First, always output WORLD: [prose] to describe settings, physical actions, and time. Keep it 2-4 sentences. Bridge any time gaps. Never generate actions for the user.
-2. If the user addresses or interacts with any ACTIVE ENTITIES, or if they would naturally respond, output a section for each of them.
-3. For each character responding, FIRST provide their inner thoughts using INNER_THOUGHT: [text], THEN their spoken dialogue/actions using DIALOGUE: [text]. They must respond in-character. Never narrate for the user.
+1. First, always output WORLD: [prose] to describe NEW chronological events, environmental changes, or time passage. Do NOT put character dialogue or character-specific actions inside the WORLD block. The WORLD block is ONLY for setting the environment. Move the scene forward. Never generate actions for the user.
+2. If the user speaks, asks a question, or acts, the ACTIVE ENTITIES in the room MUST react and respond using a CHARACTER block. The WORLD narrator cannot answer questions for them.
+3. For each character responding, FIRST provide their inner thoughts using INNER_THOUGHT: [text], THEN their spoken dialogue and physical actions using DIALOGUE: [text]. ALL character actions and speech MUST go here, not in WORLD. Never narrate for the user.
 4. Output EXACTLY like this format:
 WORLD: [prose]
 ---
@@ -246,12 +247,11 @@ ${Array.from(allCandidates.values()).map(n => `[ID: ${n.id}] ${n.name}`).join('\
 4. Output strictly in JSON format:
 {
   "new_observed_facts": ["fact1", "fact2"],
-  "relationshipUpdates": [
+  "relationship_updates": [
     { 
-      "sourceEntityId": "UUID", 
-      "targetEntityId": "UUID", 
-      "relationType": "TRUSTS", 
-      "context": "Context explaining why this relationship formed/changed"
+      "source": "Character Name",
+      "target": "user or Character Name", 
+      "change": "+1 intimacy or -1 tension"
     }
   ],
   "character_evaluations": [
@@ -281,27 +281,55 @@ ${Array.from(allCandidates.values()).map(n => `[ID: ${n.id}] ${n.name}`).join('\
       state.observed_facts = observedFacts;
     }
 
-    if (arbiterResult.relationshipUpdates && Array.isArray(arbiterResult.relationshipUpdates)) {
-      // Application Validation
-      for (const update of arbiterResult.relationshipUpdates) {
-        if (!update.sourceEntityId || !update.targetEntityId || !update.relationType) continue;
-        // Basic validation: ensure IDs look like UUIDs and are in the candidate set
-        if (!allCandidates.has(update.sourceEntityId) && !allCandidates.has(update.targetEntityId)) continue;
+    if (arbiterResult.relationship_updates && Array.isArray(arbiterResult.relationship_updates)) {
+      for (const update of arbiterResult.relationship_updates) {
+        if (!update.source || !update.target || !update.change) continue;
+        
+        const relName = `Relationship: ${update.source} & ${update.target}`;
         
         try {
-          const existing = await db.select().from(relationships).where(
-            sql`${relationships.sourceId} = ${update.sourceEntityId} AND ${relationships.targetId} = ${update.targetEntityId} AND ${relationships.relationType} = ${update.relationType}`
+          const existing = await db.select().from(entries).where(
+            sql`${entries.worldId} = ${session.worldId} AND ${entries.type} = 'relationship' AND ${entries.name} = ${relName}`
           );
+          
+          let intimacyChange = 0;
+          let tensionChange = 0;
+          
+          const changeStr = update.change.toLowerCase();
+          const amountMatch = changeStr.match(/([+-]\d+)/);
+          const amount = amountMatch ? parseInt(amountMatch[1]) : 0;
+          
+          if (changeStr.includes('intimacy')) intimacyChange = amount;
+          if (changeStr.includes('tension')) tensionChange = amount;
+          
           if (existing.length > 0) {
-            await db.update(relationships).set({ context: update.context }).where(eq(relationships.id, existing[0].id));
+            const relEntry = existing[0];
+            const layers = relEntry.layers as any || {};
+            const currentIntimacy = parseInt(layers.intimacy || "0");
+            const currentTension = parseInt(layers.tension || "0");
+            
+            layers.intimacy = String(Math.max(0, Math.min(100, currentIntimacy + intimacyChange)));
+            layers.tension = String(Math.max(0, Math.min(100, currentTension + tensionChange)));
+            
+            await db.update(entries).set({ layers }).where(eq(entries.id, relEntry.id));
           } else {
-            await db.insert(relationships).values({
-              id: randomUUID(),
+            const id = randomUUID();
+            const layers = {
+              intimacy: String(Math.max(0, Math.min(100, intimacyChange))),
+              tension: String(Math.max(0, Math.min(100, tensionChange))),
+              dynamics: `Relationship dynamic between ${update.source} and ${update.target}`
+            };
+            const embedding = await generateEmbedding(`Relationship between ${update.source} and ${update.target}`);
+            await db.insert(entries).values({
+              id,
               worldId: session.worldId,
-              sourceId: update.sourceEntityId,
-              targetId: update.targetEntityId,
-              relationType: update.relationType,
-              context: update.context
+              type: 'relationship',
+              name: relName,
+              aliases: [],
+              tags: [update.source.toLowerCase(), update.target.toLowerCase()],
+              layers,
+              triggers: {},
+              embedding
             });
           }
         } catch (e) {

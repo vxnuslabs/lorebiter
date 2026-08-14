@@ -25,14 +25,7 @@ With the backend fully fleshed out with embeddings, consistency engines, and por
   - Update the Session chat UI to parse `metadata.inner_thought` from messages.
   - Add an "Insight Glass" toggle button to the UI that, when active, reveals character inner thoughts above their spoken dialogue using distinct styling (e.g., italicized text with a subtle background color or thought bubble).
 
-### 3. Mobile / Desktop Considerations (PWA)
-- **Concept:** Lorebiter is meant to be a private, local-first feeling app.
-- **Implementation:**
-  - Ensure all layouts are strictly mobile-responsive.
-  - Add `manifest.json` and service worker setup to make the Next.js app a Progressive Web App (PWA) so users can install it to their home screen on Android/iOS.
-  - (Optional) Investigate Tauri or React Native Expo bridging if a native build is desired in the future.
-
 ## Next Steps for the Next Agent
 1. **Relationship Mechanics:** Modify the Arbiter prompt in `/api/generate` to detect and output relationship shifts.
 2. **Chat UI Update:** Revamp the message bubbles in `src/app/worlds/[id]/sessions/[sessionId]/page.tsx` to handle inner thoughts gracefully.
-3. **PWA Setup:** Add the required Next.js PWA configuration.
+

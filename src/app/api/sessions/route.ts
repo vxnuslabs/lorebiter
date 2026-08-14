@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { worldId, presentNpcs, personaId, boundEntityId } = await request.json();
+    const { worldId, presentNpcs, personaId, boundEntityId, model } = await request.json();
     const id = randomUUID();
     const [newSession] = await db
       .insert(sessions)
@@ -36,6 +36,7 @@ export async function POST(request: Request) {
         state: { 
           mode: "narrative",
           present_npcs: presentNpcs || [], 
+          model: model || "x-ai/grok-4.5",
           active_speakers: [],
           revealed_lore: [], 
           flags: {},

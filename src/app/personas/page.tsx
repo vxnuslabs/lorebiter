@@ -18,14 +18,14 @@ export default function PersonasPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || (!appearance && !personality && !background)) return;
+    if (!name) return;
     
     // Combine fields into the description for the DB
     const description = [
       appearance ? `[Appearance]\n${appearance}` : "",
       personality ? `[Personality]\n${personality}` : "",
       background ? `[Background]\n${background}` : ""
-    ].filter(Boolean).join("\n\n");
+    ].filter(Boolean).join("\n\n") || "A blank persona.";
 
     const res = await fetch("/api/personas", {
       method: "POST",
