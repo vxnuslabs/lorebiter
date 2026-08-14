@@ -13,6 +13,7 @@ export default function EntryDetailPage() {
   const entryId = params.entryId as string;
   const { data: entry, error } = useSWR(`/api/entries/${entryId}`, fetcher);
 
+  if (error || (entry && entry.error)) return <div className="p-8 text-center text-red-500">Error: {entry?.error || "Failed to load"}</div>;
   if (!entry) return <div className="p-8 text-center text-gray-500">Loading...</div>;
 
   return (
@@ -25,7 +26,7 @@ export default function EntryDetailPage() {
             <h1 className="text-3xl font-bold mb-1">{entry.name}</h1>
             <div className="flex items-center space-x-2">
               <span className="text-xs font-semibold bg-gray-100 text-gray-600 px-2 py-1 rounded-full uppercase">{entry.type}</span>
-              {entry.tags?.map((tag: string) => (
+              {(Array.isArray(entry.tags) ? entry.tags : []).map((tag: string) => (
                 <span key={tag} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">#{tag}</span>
               ))}
             </div>
@@ -64,8 +65,8 @@ export default function EntryDetailPage() {
           {Object.entries(entry.layers || {}).filter(([k]) => k !== 'intimacy' && k !== 'tension').map(([key, value]) => (
             <div key={key}>
               <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-2">{key.replace('_', ' ')}</h3>
-              <div className="bg-gray-50 p-4 rounded-lg text-gray-800 whitespace-pre-wrap leading-relaxed">
-                {value as string}
+              <div className="bg-gray-50 p-4 rounded-lg text-gray-800 whitespace-pre-wrap leading-relaxed font-mono text-sm">
+                {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
               </div>
             </div>
           ))}

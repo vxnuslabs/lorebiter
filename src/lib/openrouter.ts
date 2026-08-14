@@ -27,5 +27,11 @@ export async function generateResponse(params: {
   }
 
   const data = await response.json();
+  if (data.error) {
+    throw new Error(data.error.message || JSON.stringify(data.error));
+  }
+  if (!data.choices || data.choices.length === 0) {
+    throw new Error("OpenRouter returned no choices. Response: " + JSON.stringify(data));
+  }
   return data.choices[0].message.content;
 }

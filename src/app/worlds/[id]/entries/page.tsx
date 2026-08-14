@@ -37,7 +37,7 @@ export default function EntriesPage() {
                 <span className="text-xs font-medium bg-gray-100 text-gray-600 px-2 py-1 rounded-full uppercase">{entry.type}</span>
               </div>
               <div className="flex flex-wrap gap-1 mt-2">
-                {entry.tags?.map((tag: string) => (
+                {(Array.isArray(entry.tags) ? entry.tags : []).map((tag: string) => (
                   <span key={tag} className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">#{tag}</span>
                 ))}
               </div>

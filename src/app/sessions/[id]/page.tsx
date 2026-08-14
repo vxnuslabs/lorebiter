@@ -4,16 +4,32 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
-import { Send, FileText } from "lucide-react";
+import { Send, FileText, RefreshCcw } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
+
+function formatMessageContent(content: string) {
+  if (!content) return null;
+  // Split the content by text wrapped in asterisks
+  const parts = content.split(/(\*[^*]+\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return (
+        <span key={index} className="italic text-gray-500">
+          {part}
+        </span>
+      );
+    }
+    return <span key={index}>{part}</span>;
+  });
+}
 
 export default function ChatSessionPage() {
   const router = useRouter();
   const params = useParams();
   const sessionId = params.id as string;
   
-  const { data: initialMessages, error } = useSWR(`/api/messages?sessionId=${sessionId}`, fetcher);
+  const { data: initialMessages, error, mutate } = useSWR(`/api/messages?sessionId=${sessionId}`, fetcher);
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -61,6 +77,41 @@ export default function ChatSessionPage() {
       // Revert optimistic if error
       setMessages(prev => prev.filter(m => m.id !== tempUserMsg.id));
       alert("Failed to generate response. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRetry = async () => {
+    if (isLoading) return;
+    const hasUserMsg = messages.some(m => m.role === "user");
+    if (!hasUserMsg) return;
+
+    setIsLoading(true);
+
+    // Optimistically remove all AI messages after the last user message
+    setMessages(prev => {
+      const lastUserIdx = prev.findLastIndex(m => m.role === "user");
+      if (lastUserIdx !== -1) {
+        return prev.slice(0, lastUserIdx + 1);
+      }
+      return prev;
+    });
+
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, retry: true })
+      });
+      
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      await mutate();
+    } catch (e: any) {
+      console.error(e);
+      alert("Failed to retry response: " + e.message);
     } finally {
       setIsLoading(false);
     }
@@ -137,7 +188,7 @@ export default function ChatSessionPage() {
                       {msg.metadata.inner_thought}
                     </div>
                   )}
-                  <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                  <p className="whitespace-pre-wrap leading-relaxed">{formatMessageContent(msg.content)}</p>
                 </div>
               </div>
             )}
@@ -145,7 +196,7 @@ export default function ChatSessionPage() {
             {msg.role === "user" && (
               <div className="flex flex-col items-end max-w-[85%] ml-auto">
                 <div className="bg-black text-white rounded-2xl rounded-tr-sm p-4 shadow-sm">
-                  <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                  <p className="whitespace-pre-wrap leading-relaxed">{formatMessageContent(msg.content)}</p>
                 </div>
               </div>
             )}
@@ -165,8 +216,8 @@ export default function ChatSessionPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="bg-white border-t p-4">
-        <form onSubmit={handleSend} className="relative flex items-center">
+      <div className="bg-white border-t p-4 flex gap-2">
+        <form onSubmit={handleSend} className="relative flex-1 flex items-center">
           <textarea
             value={input}
             onChange={e => setInput(e.target.value)}
@@ -189,8 +240,18 @@ export default function ChatSessionPage() {
             <Send className="w-4 h-4" />
           </button>
         </form>
-        <p className="text-xs text-center text-gray-400 mt-2">Enter to send, Shift+Enter for new line.</p>
+        {messages.some(m => m.role === "user") && (
+          <button
+            onClick={handleRetry}
+            disabled={isLoading}
+            className="p-3 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 disabled:opacity-50 transition-colors flex items-center justify-center shrink-0"
+            title="Retry Last Turn"
+          >
+            <RefreshCcw className="w-5 h-5" />
+          </button>
+        )}
       </div>
+      <p className="text-xs text-center text-gray-400 mb-2">Enter to send, Shift+Enter for new line.</p>
     </div>
   );
 }

@@ -27,7 +27,17 @@ CANONICAL RELATIONSHIPS:
 ${formattedRels.length > 0 ? formattedRels.join("\n") : "None."}
 
 SESSION-RESOLVED INTERPRETATION:
-${persona && boundEntity ? `- In this session, ${boundEntity.name} is occupied by ${persona.name}.\n- Therefore any canonical relationship directed toward ${boundEntity.name} applies to ${persona.name}.` : ''}`;
+${persona && boundEntity ? `- In this session, ${boundEntity.name} is occupied by ${persona.name}.\n- Therefore any canonical relationship directed toward ${boundEntity.name} applies to ${persona.name}.` : ''}
+
+SEMANTIC LORE
+=====================
+${relevantLoreContext.length > 0 ? relevantLoreContext.join("\n") : "None relevant."}
+Established Observed Facts:
+${observedFacts.length > 0 ? observedFacts.map((f: string) => "- " + f).join("\n") : "None yet."}
+
+RECENT SESSION HISTORY
+=====================
+${historyText}`;
 }
 
 describe('Canonical Identity Architecture', () => {
@@ -97,5 +107,58 @@ describe('Canonical Identity Architecture', () => {
     const update = arbiterOutput.relationshipUpdates[0];
     const isValid = allCandidates.has(update.sourceEntityId) && allCandidates.has(update.targetEntityId);
     expect(isValid).toBe(true);
+  });
+
+  it('Arbiter Context: Includes canonical lore, facts, and session history', () => {
+    const formattedRels = ['- [Madeleine] PROTECTS [Velty Aberrant]'];
+    const relevantLore = ['Madeleine: strict, patient, guardian'];
+    const observedFacts = ['The user woke up early.'];
+    const historyText = 'USER: hoaaams *i yawn* you are so early today';
+    
+    const context = buildContextPrompt(null, null, [], formattedRels, relevantLore, observedFacts, historyText, false);
+    
+    expect(context).toContain('Madeleine: strict, patient, guardian');
+    expect(context).toContain('[Madeleine] PROTECTS [Velty Aberrant]');
+    expect(context).toContain('The user woke up early.');
+    expect(context).toContain('hoaaams *i yawn* you are so early today');
+  });
+
+  it('Madeleine Regression: Rejects unsupported history (nickname)', () => {
+    // Emulate Arbiter evaluation output for the hallucinated nickname
+    const arbiterOutput = {
+      character_evaluations: [
+        {
+          name: 'Madeleine',
+          contradiction: false,
+          unsupported_history: true,
+          reason: 'The response claims Velty has previously used a nickname for Madeleine, but no evidence exists.'
+        }
+      ]
+    };
+    
+    const evaluation = arbiterOutput.character_evaluations[0];
+    const shouldRegenerate = evaluation.contradiction || evaluation.unsupported_history;
+    
+    expect(shouldRegenerate).toBe(true);
+    expect(evaluation.unsupported_history).toBe(true);
+  });
+
+  it('Good Grok 4.5 Case: Allows reasonable character inferences without flagging unsupported history', () => {
+    // Emulate Arbiter evaluation output for a valid, evidence-backed inference
+    const arbiterOutput = {
+      character_evaluations: [
+        {
+          name: 'Madeleine',
+          contradiction: false,
+          unsupported_history: false,
+          reason: 'Madeleine references the late lord (supported by canonical lore) and waking early (supported by user message).'
+        }
+      ]
+    };
+    
+    const evaluation = arbiterOutput.character_evaluations[0];
+    const shouldRegenerate = evaluation.contradiction || evaluation.unsupported_history;
+    
+    expect(shouldRegenerate).toBe(false);
   });
 });

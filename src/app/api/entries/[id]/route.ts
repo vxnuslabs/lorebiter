@@ -4,9 +4,10 @@ import { db } from "@/db";
 import { entries } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const [entry] = await db.select().from(entries).where(eq(entries.id, params.id));
+    const { id } = await params;
+    const [entry] = await db.select().from(entries).where(eq(entries.id, id));
     if (!entry) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(entry);
   } catch (error) {

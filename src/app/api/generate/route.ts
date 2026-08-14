@@ -22,7 +22,30 @@ function containsHijack(text: string): boolean {
 
 export async function POST(request: Request) {
   try {
-    const { sessionId, userMessage, model: requestedModel } = await request.json();
+    const { sessionId, userMessage: rawUserMessage, model: requestedModel, retry } = await request.json();
+    let userMessage = rawUserMessage;
+
+    if (retry) {
+      // Find the last user message
+      const recentMessages = await db.select().from(messages)
+        .where(eq(messages.sessionId, sessionId))
+        .orderBy(desc(messages.createdAt))
+        .limit(20);
+      
+      const lastUserIdx = recentMessages.findIndex(m => m.role === "user");
+      if (lastUserIdx !== -1) {
+        const lastUserMsg = recentMessages[lastUserIdx];
+        userMessage = lastUserMsg.content;
+        
+        // Delete this user message and any messages that came after it (which are before it in the desc array)
+        const messagesToDelete = recentMessages.slice(0, lastUserIdx + 1).map(m => m.id);
+        if (messagesToDelete.length > 0) {
+          await db.delete(messages).where(inArray(messages.id, messagesToDelete));
+        }
+      } else if (!userMessage) {
+        return NextResponse.json({ error: "No user message found to retry" }, { status: 400 });
+      }
+    }
 
     const userEmbedding = await generateEmbedding(userMessage);
 
@@ -175,10 +198,7 @@ If none are addressed or it is ambiguous, output an empty array. Do NOT invent I
 
     const activeNpcs = presentNpcs.filter(npc => activeSpeakerIds.includes(npc.id));
 
-    // Prepare Prompt
-    let systemPrompt = `You are the Game Engine orchestration layer. You must generate the response for the scene.
-
-CANONICAL WORLD STATE
+    const evidenceContext = `CANONICAL WORLD STATE
 =====================
 
 PLAYER BINDING:
@@ -204,7 +224,12 @@ ${observedFacts.length > 0 ? observedFacts.map((f: string) => "- " + f).join("\n
 
 RECENT SESSION HISTORY
 =====================
-${historyText}
+${historyText}`;
+
+    // Prepare Prompt
+    let systemPrompt = `You are the Game Engine orchestration layer. You must generate the response for the scene.
+
+${evidenceContext}
 
 INSTRUCTIONS
 =====================
@@ -235,6 +260,8 @@ Review the generated response against the canonical state.
 Generated Response:
 ${responseText}
 
+${evidenceContext}
+
 Task:
 1. Identify any NEW significant physical truths established in the WORLD prose.
 2. Check if any CHARACTER dialogue/actions contradict Established Observed Facts.
@@ -244,21 +271,31 @@ Task:
 Available Canonical Entities for Relationships:
 ${Array.from(allCandidates.values()).map(n => `[ID: ${n.id}] ${n.name}`).join('\n')}
 
+CONTINUITY RULE:
+Generated characters may freely create new present-scene events, reactions, descriptions, and reasonable emotional inferences.
+However, any statement that implies a prior event, previous interaction, memory, established habit, promise, nickname, relationship history, or other past occurrence must be supported by canonical state, observed facts, or session history.
+Do not treat plausibility as evidence.
+If a past occurrence has no supporting evidence, classify it as unsupported_history.
+Do not classify a merely plausible character inference as unsupported history.
+
 4. Output strictly in JSON format:
 {
   "new_observed_facts": ["fact1", "fact2"],
-  "relationship_updates": [
+  "relationshipUpdates": [
     { 
-      "source": "Character Name",
-      "target": "user or Character Name", 
-      "change": "+1 intimacy or -1 tension"
+      "sourceEntityId": "UUID", 
+      "targetEntityId": "UUID", 
+      "relationType": "TRUSTS", 
+      "context": "Context explaining why this relationship formed/changed"
     }
   ],
   "character_evaluations": [
     {
       "name": "Character Name",
       "contradiction": boolean,
-      "reason": "explanation of contradiction if any",
+      "unsupported_history": boolean,
+      "reason": "explanation of contradiction or unsupported history if any",
+      "evidence": [],
       "justifiable_as_lie": boolean,
       "justifiable_as_misremembered": boolean
     }
@@ -281,55 +318,27 @@ ${Array.from(allCandidates.values()).map(n => `[ID: ${n.id}] ${n.name}`).join('\
       state.observed_facts = observedFacts;
     }
 
-    if (arbiterResult.relationship_updates && Array.isArray(arbiterResult.relationship_updates)) {
-      for (const update of arbiterResult.relationship_updates) {
-        if (!update.source || !update.target || !update.change) continue;
-        
-        const relName = `Relationship: ${update.source} & ${update.target}`;
+    if (arbiterResult.relationshipUpdates && Array.isArray(arbiterResult.relationshipUpdates)) {
+      // Application Validation
+      for (const update of arbiterResult.relationshipUpdates) {
+        if (!update.sourceEntityId || !update.targetEntityId || !update.relationType) continue;
+        // Basic validation: ensure IDs look like UUIDs and are in the candidate set
+        if (!allCandidates.has(update.sourceEntityId) && !allCandidates.has(update.targetEntityId)) continue;
         
         try {
-          const existing = await db.select().from(entries).where(
-            sql`${entries.worldId} = ${session.worldId} AND ${entries.type} = 'relationship' AND ${entries.name} = ${relName}`
+          const existing = await db.select().from(relationships).where(
+            sql`${relationships.sourceId} = ${update.sourceEntityId} AND ${relationships.targetId} = ${update.targetEntityId} AND ${relationships.relationType} = ${update.relationType}`
           );
-          
-          let intimacyChange = 0;
-          let tensionChange = 0;
-          
-          const changeStr = update.change.toLowerCase();
-          const amountMatch = changeStr.match(/([+-]\d+)/);
-          const amount = amountMatch ? parseInt(amountMatch[1]) : 0;
-          
-          if (changeStr.includes('intimacy')) intimacyChange = amount;
-          if (changeStr.includes('tension')) tensionChange = amount;
-          
           if (existing.length > 0) {
-            const relEntry = existing[0];
-            const layers = relEntry.layers as any || {};
-            const currentIntimacy = parseInt(layers.intimacy || "0");
-            const currentTension = parseInt(layers.tension || "0");
-            
-            layers.intimacy = String(Math.max(0, Math.min(100, currentIntimacy + intimacyChange)));
-            layers.tension = String(Math.max(0, Math.min(100, currentTension + tensionChange)));
-            
-            await db.update(entries).set({ layers }).where(eq(entries.id, relEntry.id));
+            await db.update(relationships).set({ context: update.context }).where(eq(relationships.id, existing[0].id));
           } else {
-            const id = randomUUID();
-            const layers = {
-              intimacy: String(Math.max(0, Math.min(100, intimacyChange))),
-              tension: String(Math.max(0, Math.min(100, tensionChange))),
-              dynamics: `Relationship dynamic between ${update.source} and ${update.target}`
-            };
-            const embedding = await generateEmbedding(`Relationship between ${update.source} and ${update.target}`);
-            await db.insert(entries).values({
-              id,
+            await db.insert(relationships).values({
+              id: randomUUID(),
               worldId: session.worldId,
-              type: 'relationship',
-              name: relName,
-              aliases: [],
-              tags: [update.source.toLowerCase(), update.target.toLowerCase()],
-              layers,
-              triggers: {},
-              embedding
+              sourceId: update.sourceEntityId,
+              targetId: update.targetEntityId,
+              relationType: update.relationType,
+              context: update.context
             });
           }
         } catch (e) {
@@ -381,14 +390,15 @@ ${Array.from(allCandidates.values()).map(n => `[ID: ${n.id}] ${n.name}`).join('\
             
             // Apply Arbiter Judgement
             const evaluation = arbiterResult.character_evaluations?.find((e: any) => e.name === speakerName);
-            if (evaluation && evaluation.contradiction) {
+            if (evaluation && (evaluation.contradiction || evaluation.unsupported_history)) {
               if (evaluation.justifiable_as_lie && (npcTags.includes("deceptive") || npcTags.includes("secret_keeper"))) {
                 metadata.flag = "lie";
               } else if (evaluation.justifiable_as_misremembered && (npcTags.includes("unreliable") || npcTags.includes("stressed"))) {
                 metadata.flag = "misremembered";
               } else {
-                // Hard contradiction, regenerate
-                const guardPrompt = `${systemPrompt}\n\nCRITICAL ERROR: Your previous DIALOGUE response for ${speakerName} contained a hard contradiction: ${evaluation.reason}. Correct this. Output the same format (INNER_THOUGHT and DIALOGUE).`;
+                // Hard contradiction or unsupported history, regenerate
+                let errorPrefix = evaluation.contradiction ? "CRITICAL CONTRADICTION" : "CRITICAL CONTINUITY ERROR";
+                const guardPrompt = `${systemPrompt}\n\n${errorPrefix}:\nYour previous response asserted something invalid: ${evaluation.reason}\n\nRewrite the character's INNER_THOUGHT and DIALOGUE. Preserve the scene and character personality. Do not invent the missing historical fact. You may freely describe present observations and reasonable emotional reactions. Output the same format (INNER_THOUGHT and DIALOGUE).`;
                 const retryResponse = await generateResponse({ systemPrompt: guardPrompt, userMessage, model });
                 const retryParts = retryResponse.split("---");
                 const retryCharPart = retryParts.find((p: string) => p.includes(`CHARACTER ${speakerName}:`));

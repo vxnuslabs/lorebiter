@@ -5,7 +5,7 @@ export const users = pgTable("users", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   passwordHash: text("password_hash"),
-  createdAt: integer("created_at").default(Math.floor(Date.now() / 1000)),
+  createdAt: integer("created_at").$defaultFn(() => Math.floor(Date.now() / 1000)),
 });
 
 export const personas = pgTable("personas", {
@@ -13,7 +13,7 @@ export const personas = pgTable("personas", {
   userId: text("user_id").notNull().references(() => users.id),
   name: text("name").notNull(),
   description: text("description").notNull(),
-  createdAt: integer("created_at").default(Math.floor(Date.now() / 1000)),
+  createdAt: integer("created_at").$defaultFn(() => Math.floor(Date.now() / 1000)),
 });
 
 export const worlds = pgTable("worlds", {
@@ -22,7 +22,7 @@ export const worlds = pgTable("worlds", {
   ownerId: text("owner_id").references(() => users.id),
   themeHint: text("theme_hint"),
   narratorVoice: text("narrator_voice"),
-  createdAt: integer("created_at").default(Math.floor(Date.now() / 1000)),
+  createdAt: integer("created_at").$defaultFn(() => Math.floor(Date.now() / 1000)),
 });
 
 export const entries = pgTable("entries", {
@@ -36,7 +36,7 @@ export const entries = pgTable("entries", {
   triggers: jsonb("triggers").default({}).notNull(), // e.g. { reveal_appearance: string }
   autoInject: boolean("auto_inject").default(true),
   embedding: vector("embedding", { dimensions: 1536 }),
-  createdAt: integer("created_at").default(Math.floor(Date.now() / 1000)),
+  createdAt: integer("created_at").$defaultFn(() => Math.floor(Date.now() / 1000)),
 });
 
 export const relationships = pgTable("relationships", {
@@ -46,7 +46,7 @@ export const relationships = pgTable("relationships", {
   targetId: text("target_id").notNull().references(() => entries.id, { onDelete: "cascade" }),
   relationType: text("relation_type").notNull(),
   context: text("context"),
-  createdAt: integer("created_at").default(Math.floor(Date.now() / 1000)),
+  createdAt: integer("created_at").$defaultFn(() => Math.floor(Date.now() / 1000)),
 });
 
 export const sessions = pgTable("sessions", {
@@ -55,7 +55,7 @@ export const sessions = pgTable("sessions", {
   personaId: text("persona_id").references(() => personas.id),
   boundEntityId: text("bound_entity_id").references(() => entries.id),
   state: jsonb("state").default({}).notNull(),
-  startedAt: integer("started_at").default(Math.floor(Date.now() / 1000)),
+  startedAt: integer("started_at").$defaultFn(() => Math.floor(Date.now() / 1000)),
   lastTurn: integer("last_turn").default(0),
 });
 
@@ -67,5 +67,5 @@ export const messages = pgTable("messages", {
   speakerName: text("speaker_name"), // for character role
   metadata: jsonb("metadata").default({}), // { flag: "lie" | "misremembered" }
   embedding: vector("embedding", { dimensions: 1536 }),
-  createdAt: integer("created_at").default(Math.floor(Date.now() / 1000)),
+  createdAt: integer("created_at").$defaultFn(() => Math.floor(Date.now() / 1000)),
 });
