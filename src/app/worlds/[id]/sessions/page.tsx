@@ -3,14 +3,14 @@
 import useSWR from "swr";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Plus, MessageSquare } from "lucide-react";
+import { Plus, MessageSquare, Trash2 } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 export default function SessionsPage() {
   const params = useParams();
   const worldId = params.id as string;
-  const { data: sessions, error } = useSWR(`/api/sessions?worldId=${worldId}`, fetcher);
+  const { data: sessions, error, mutate } = useSWR(`/api/sessions?worldId=${worldId}`, fetcher);
   const { data: entries } = useSWR(`/api/entries?worldId=${worldId}`, fetcher);
 
   const getEntryNames = (sessionState: any) => {
@@ -21,6 +21,18 @@ export default function SessionsPage() {
       return entry ? entry.name : "Unknown";
     });
     return names.join(", ") || "No characters";
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    if (!confirm("Are you sure you want to delete this session?")) return;
+    
+    try {
+      await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+      mutate();
+    } catch (error) {
+      alert("Failed to delete session");
+    }
   };
 
   return (
@@ -45,8 +57,17 @@ export default function SessionsPage() {
                   <p className="text-sm text-gray-500">Started: {new Date(session.startedAt * 1000).toLocaleString()}</p>
                 </div>
               </div>
-              <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-                {session.lastTurn || 0} turns
+              <div className="flex items-center space-x-4">
+                <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                  {session.lastTurn || 0} turns
+                </div>
+                <button
+                  onClick={(e) => handleDelete(e, session.id)}
+                  className="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-50 transition-colors"
+                  title="Delete Session"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </Link>

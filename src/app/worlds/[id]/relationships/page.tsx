@@ -4,7 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Plus, Link as LinkIcon } from "lucide-react";
+import { ArrowLeft, Plus, Link as LinkIcon, Edit2, Trash2, Check, X } from "lucide-react";
 import { LabelWithTooltip } from "@/components/ui/label-with-tooltip";
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
@@ -20,6 +20,10 @@ export default function RelationshipsPage() {
   const [targetId, setTargetId] = useState("");
   const [relationType, setRelationType] = useState("");
   const [context, setContext] = useState("");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editRelationType, setEditRelationType] = useState("");
+  const [editContext, setEditContext] = useState("");
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,6 +43,31 @@ export default function RelationshipsPage() {
       setIsCreating(false);
       mutate();
     }
+  };
+
+  const startEditing = (rel: any) => {
+    setEditingId(rel.id);
+    setEditRelationType(rel.relationType);
+    setEditContext(rel.context || "");
+  };
+
+  const handleUpdate = async (e: React.FormEvent, id: string) => {
+    e.preventDefault();
+    if (!editRelationType) return;
+
+    await fetch(`/api/relationships/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ relationType: editRelationType, context: editContext })
+    });
+    setEditingId(null);
+    mutate();
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this relationship?")) return;
+    await fetch(`/api/relationships/${id}`, { method: "DELETE" });
+    mutate();
   };
 
   const getEntryName = (id: string) => {
@@ -112,14 +141,54 @@ export default function RelationshipsPage() {
       <div className="bg-white border rounded-2xl overflow-hidden shadow-sm">
         <ul className="divide-y">
           {relationships?.map((rel: any) => (
-            <li key={rel.id} className="p-4 flex items-center space-x-4 hover:bg-gray-50">
-              <LinkIcon className="w-5 h-5 text-gray-400" />
-              <div>
-                <p className="font-medium text-gray-900">
-                  {getEntryName(rel.sourceId)} <span className="text-blue-600 mx-1">{rel.relationType}</span> {getEntryName(rel.targetId)}
-                </p>
-                {rel.context && <p className="text-sm text-gray-500 mt-1">{rel.context}</p>}
-              </div>
+            <li key={rel.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-gray-50 group">
+              {editingId === rel.id ? (
+                <form onSubmit={(e) => handleUpdate(e, rel.id)} className="w-full flex flex-col md:flex-row gap-4 items-start md:items-center">
+                  <div className="flex-1 w-full md:w-auto">
+                    <span className="font-medium mr-2">{getEntryName(rel.sourceId)}</span>
+                    <input 
+                      type="text" 
+                      value={editRelationType} 
+                      onChange={(e) => setEditRelationType(e.target.value)} 
+                      className="border rounded p-1 w-32 text-sm uppercase" 
+                      placeholder="VERB"
+                      required
+                    />
+                    <span className="font-medium ml-2">{getEntryName(rel.targetId)}</span>
+                    <input 
+                      type="text" 
+                      value={editContext} 
+                      onChange={(e) => setEditContext(e.target.value)} 
+                      className="border rounded p-1 ml-4 flex-1 text-sm w-full md:w-auto mt-2 md:mt-0" 
+                      placeholder="Context"
+                    />
+                  </div>
+                  <div className="flex space-x-2">
+                    <button type="submit" className="text-green-600 hover:text-green-800 p-2"><Check className="w-4 h-4" /></button>
+                    <button type="button" onClick={() => setEditingId(null)} className="text-gray-500 hover:text-gray-700 p-2"><X className="w-4 h-4" /></button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <div className="flex items-start space-x-4">
+                    <LinkIcon className="w-5 h-5 text-gray-400 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {getEntryName(rel.sourceId)} <span className="text-blue-600 mx-1">{rel.relationType}</span> {getEntryName(rel.targetId)}
+                      </p>
+                      {rel.context && <p className="text-sm text-gray-500 mt-1">{rel.context}</p>}
+                    </div>
+                  </div>
+                  <div className="flex space-x-2 mt-4 md:mt-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => startEditing(rel)} className="text-gray-500 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50">
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleDelete(rel.id)} className="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-50">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </>
+              )}
             </li>
           ))}
           {relationships?.length === 0 && !isCreating && (
